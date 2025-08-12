@@ -26,7 +26,6 @@ import cn.nukkit.entity.EntityHuman;
 import cn.nukkit.entity.EntityInteractable;
 import cn.nukkit.entity.EntityLiving;
 import cn.nukkit.entity.EntityRideable;
-import cn.nukkit.entity.data.EntityDataTypes;
 import cn.nukkit.entity.data.EntityFlag;
 import cn.nukkit.entity.data.PlayerFlag;
 import cn.nukkit.entity.data.Skin;
@@ -112,6 +111,7 @@ import cn.nukkit.permission.PermissionAttachmentInfo;
 import cn.nukkit.plugin.InternalPlugin;
 import cn.nukkit.plugin.Plugin;
 import cn.nukkit.positiontracking.PositionTrackingService;
+import cn.nukkit.registry.PlayerBehaviorRegistry;
 import cn.nukkit.scheduler.AsyncTask;
 import cn.nukkit.scheduler.ServerScheduler;
 import cn.nukkit.scheduler.Task;
@@ -158,6 +158,7 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.Map.Entry;
+import java.util.Queue;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -641,10 +642,16 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
     }
 
     /**
-     * 完成completeLoginSequence后执行
+     * Executed after completing the completeLoginSequence
      */
     protected void doFirstSpawn() {
+        if (PlayerBehaviorRegistry.firstSpawn().handleFirstSpawn(this)) {
+            return;
+        }
+
         this.spawned = true;
+
+        PlayerBehaviorRegistry.firstSpawn().beforeFirstSpawn(this);
 
         this.getSession().syncCraftingData();
         this.getSession().syncInventory();
@@ -678,17 +685,17 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             this.sendExperienceLevel(this.getExperienceLevel());
         }
 
-        //Weather
+        // Weather
         this.getLevel().sendWeather(this);
 
-        //FoodLevel
+        // FoodLevel
         PlayerFood food = this.getFoodData();
         if (food.isHungry()) {
             food.sendFood();
         }
 
         var scoreboardManager = this.getServer().getScoreboardManager();
-        if (scoreboardManager != null) {//in test environment sometimes the scoreboard level is null
+        if (scoreboardManager != null) { // in test environment sometimes the scoreboard level is null
             scoreboardManager.onPlayerJoin(this);
         }
 
@@ -711,8 +718,8 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         log.debug("Send Player Spawn Status Packet to {},wait init packet", getName());
         this.sendPlayStatus(PlayStatusPacket.PLAYER_SPAWN);
 
-        //客户端初始化完毕再传送玩家，避免下落 (x)
-        //已经设置immobile了所以不用管下落了
+        // Teleport the player after the client is initialized to avoid falling (x)
+        // I have already set up immobile so I don't need to worry about whereabouts
         Location pos;
         if (this.server.getSettings().baseSettings().safeSpawn() && (this.gamemode & 0x01) == 0) {
             pos = this.level.getSafeSpawn(this).getLocation();
@@ -721,15 +728,21 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         } else {
             pos = new Location(this.x, this.y, this.z, this.yaw, this.pitch, this.level);
         }
+
+        // Allow controller to replace/adjust the teleport target
+        pos = PlayerBehaviorRegistry.firstSpawn().firstSpawnResolveTeleportTarget(this, pos);
+
         this.teleport(pos, TeleportCause.PLAYER_SPAWN);
 
         if (this.getHealth() < 1) {
             this.setHealth(0);
-        } else setHealth(getHealth()); //sends health to player
+        } else setHealth(getHealth()); // sends health to player
 
         getLevel().getScheduler().scheduleDelayedTask(InternalPlugin.INSTANCE, () -> {
             this.session.getMachine().fire(SessionState.IN_GAME);
         }, 5);
+
+        PlayerBehaviorRegistry.firstSpawn().afterFirstSpawn(this);
     }
 
     @Override
@@ -1257,11 +1270,17 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
     }
 
     /**
-     * 玩家客户端初始化完成后调用
+     * Called after the player client is initialized
      */
     protected void onPlayerLocallyInitialized() {
         if (locallyInitialized) return;
         locallyInitialized = true;
+
+        if (PlayerBehaviorRegistry.clientInit().handleClientInit(this)) {
+            return;
+        }
+
+        PlayerBehaviorRegistry.clientInit().beforeClientInit(this);
 
         //init entity data property
         this.setDataProperty(NAME, info.getUsername(), false);
@@ -1280,9 +1299,6 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         }
 
         /*
-          我们在玩家客户端初始化后才发送游戏模式，以解决观察者模式疾跑速度不正确的问题
-          只有在玩家客户端进入游戏显示后再设置观察者模式，疾跑速度才正常
-          强制更新游戏模式以确保客户端会收到模式更新包
           After initializing the player client, we send the game mode to address the issue of incorrect
           sprint speed in spectator mode. Only after the player client enters the game display is spectator mode set,
           and the sprint speed behaves normally. We force an update of the game mode to ensure that the client receives the
@@ -1292,6 +1308,8 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         this.sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), entityDataMap);
         this.spawnToAll();
         Arrays.stream(this.level.getEntities()).filter(entity -> entity.getViewers().containsKey(this.getLoaderId()) && entity instanceof EntityBoss).forEach(entity -> ((EntityBoss) entity).addBossbar(this));
+
+        PlayerBehaviorRegistry.clientInit().afterClientInit(this);
     }
 
     /**
@@ -1323,6 +1341,10 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
     }
 
     protected void respawn() {
+        if (PlayerBehaviorRegistry.respawn().handleRespawn(this)) {
+            return;
+        }
+
         //the player can't respawn if the server is hardcore
         if (this.server.isHardcore()) {
             this.setBanned(true);
@@ -1360,6 +1382,8 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         this.server.getPluginManager().callEvent(playerRespawnEvent);
         Position respawnPos = playerRespawnEvent.getRespawnPosition().first();
 
+        respawnPos = PlayerBehaviorRegistry.respawn().respawnResolvePosition(this, respawnPos);
+
         this.sendExperience();
         this.sendExperienceLevel();
 
@@ -1385,6 +1409,8 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         this.offhandInventory.sendContents(this);
         this.teleport(Location.fromObject(respawnPos.add(0, this.getEyeHeight(), 0), respawnPos.level), TeleportCause.PLAYER_SPAWN);
         this.spawnToAll();
+
+        PlayerBehaviorRegistry.respawn().afterRespawn(this);
     }
 
     @Override
@@ -1548,12 +1574,13 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
     }
 
     /**
-     * 获取玩家离开的消息
+     * Get the message that the player has left
      *
      * @return {@link TranslationContainer}
      */
     public TranslationContainer getLeaveMessage() {
-        return new TranslationContainer(TextFormat.YELLOW + "%multiplayer.player.left", this.getDisplayName());
+        TranslationContainer vanilla = new TranslationContainer(TextFormat.YELLOW + "%multiplayer.player.left", this.getDisplayName());
+        return PlayerBehaviorRegistry.leaveMessage().resolveLeaveMessage(this, vanilla);
     }
 
     public void setBanned(boolean value) {
@@ -1959,16 +1986,29 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
 
     @Override
     public void setSkin(Skin skin) {
+        if (PlayerBehaviorRegistry.vanillaSkin().handleSetSkin(this, skin)) {
+            return;
+        }
+
+        PlayerBehaviorRegistry.vanillaSkin().beforeSetSkin(this, skin);
+
         super.setSkin(skin);
-        if (this.spawned) {
-//            this.server.updatePlayerListData(this.getUniqueId(), this.getId(), this.getDisplayName(), skin, this.getLoginChainData().getXUID());
-            var skinPacket = new PlayerSkinPacket();
+
+        PlayerSkinPacket skinPacket = null;
+
+        if (this.spawned && PlayerBehaviorRegistry.vanillaSkin().allowBroadcast(this, skin)) {
+            skinPacket = new PlayerSkinPacket();
             skinPacket.uuid = this.getUniqueId();
             skinPacket.skin = this.getSkin();
             skinPacket.newSkinName = this.getSkin().getSkinId();
             skinPacket.oldSkinName = "";
+
+            PlayerBehaviorRegistry.vanillaSkin().beforeBroadcast(this, skin, skinPacket);
             Server.broadcastPacket(Server.getInstance().getOnlinePlayers().values(), skinPacket);
+            PlayerBehaviorRegistry.vanillaSkin().afterBroadcast(this, skin, skinPacket);
         }
+
+        PlayerBehaviorRegistry.vanillaSkin().afterSetSkin(this, skin);
     }
 
     /**
@@ -2293,9 +2333,17 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             return false;
         }
 
+        if (PlayerBehaviorRegistry.sleep().handleSleep(this, pos)) {
+            PlayerBehaviorRegistry.sleep().afterSleep(this, pos, true);
+            return true;
+        }
+
+        PlayerBehaviorRegistry.sleep().beforeSleep(this, pos);
+
         for (Entity p : this.level.getNearbyEntities(this.boundingBox.grow(2, 1, 2), this)) {
             if (p instanceof Player) {
                 if (((Player) p).sleeping != null && pos.distance(((Player) p).sleeping) <= 0.1) {
+                    PlayerBehaviorRegistry.sleep().afterSleep(this, pos, false);
                     return false;
                 }
             }
@@ -2304,24 +2352,40 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         PlayerBedEnterEvent ev;
         this.server.getPluginManager().callEvent(ev = new PlayerBedEnterEvent(this, this.level.getBlock(pos)));
         if (ev.isCancelled()) {
+            PlayerBehaviorRegistry.sleep().afterSleep(this, pos, false);
             return false;
         }
 
         this.sleeping = pos.clone();
-        this.teleport(new Location(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, this.yaw, this.pitch, this.level), null);
+
+        Location vanillaTarget = new Location(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, this.yaw, this.pitch, this.level);
+        Location target = PlayerBehaviorRegistry.sleep().sleepResolveTeleportTarget(this, pos, vanillaTarget);
+        this.teleport(target, null);
 
         this.setDataProperty(BED_POSITION, new BlockVector3((int) pos.x, (int) pos.y, (int) pos.z));
         this.setPlayerFlag(PlayerFlag.SLEEP);
-        this.setSpawn(Position.fromObject(pos, getLevel()), SpawnPointType.BLOCK);
-        this.level.sleepTicks = 75;
 
+        Position vanillaSpawn = Position.fromObject(pos, getLevel());
+        Position spawn = PlayerBehaviorRegistry.sleep().sleepResolveSpawnPosition(this, pos, vanillaSpawn);
+        this.setSpawn(spawn, SpawnPointType.BLOCK);
+
+        this.level.sleepTicks = 75;
         this.timeSinceRest = 0;
 
+        PlayerBehaviorRegistry.sleep().afterSleep(this, pos, true);
         return true;
     }
 
     public void stopSleep() {
         if (this.sleeping != null) {
+
+            if (PlayerBehaviorRegistry.stopSleep().handleStopSleep(this)) {
+                PlayerBehaviorRegistry.stopSleep().afterStopSleep(this);
+                return;
+            }
+
+            PlayerBehaviorRegistry.stopSleep().beforeStopSleep(this);
+
             this.server.getPluginManager().callEvent(new PlayerBedLeaveEvent(this, this.level.getBlock(this.sleeping)));
 
             this.sleeping = null;
@@ -2335,6 +2399,8 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             pk.eid = this.getId();
             pk.action = AnimatePacket.Action.WAKE_UP;
             this.dataPacket(pk);
+
+            PlayerBehaviorRegistry.stopSleep().afterStopSleep(this);
         }
     }
 
@@ -2641,9 +2707,17 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             return false;
         }
 
+        if (PlayerBehaviorRegistry.onUpdate().handleUpdate(this, currentTick)) {
+            PlayerBehaviorRegistry.onUpdate().afterUpdate(this, currentTick, true);
+            return true;
+        }
+
+        PlayerBehaviorRegistry.onUpdate().beforeUpdate(this, currentTick);
+
         int tickDiff = currentTick - this.lastUpdate;
 
         if (tickDiff <= 0) {
+            PlayerBehaviorRegistry.onUpdate().afterUpdate(this, currentTick, true);
             return true;
         }
 
@@ -2660,9 +2734,11 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         if (!this.isAlive() && this.spawned) {
             if (this.getLevel().getGameRules().getBoolean(GameRule.DO_IMMEDIATE_RESPAWN)) {
                 this.despawnFromAll();
+                PlayerBehaviorRegistry.onUpdate().afterUpdate(this, currentTick, true);
                 return true;
             }
             getLevel().getScheduler().scheduleDelayedTask(InternalPlugin.INSTANCE, this::despawnFromAll, 10);
+            PlayerBehaviorRegistry.onUpdate().afterUpdate(this, currentTick, true);
             return true;
         }
 
@@ -2682,10 +2758,12 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             }
 
             this.entityBaseTick(tickDiff);
+            PlayerBehaviorRegistry.onUpdate().afterEntityBaseTick(this, tickDiff);
 
             if (this.getServer().getDifficulty() == 0 && this.level.getGameRules().getBoolean(GameRule.NATURAL_REGENERATION)) {
                 if (this.getHealth() < this.getMaxHealth() && this.ticksLived % 20 == 0) {
-                    this.heal(1);
+                    int amount = PlayerBehaviorRegistry.onUpdate().regenerateAmount(this, 1);
+                    this.heal(amount);
                 }
             }
 
@@ -2715,8 +2793,9 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
                         this.highestPosition = this.y;
                     }
 
-                    // Wiki: 使用鞘翅滑翔时在垂直高度下降率低于每刻 0.5 格的情况下，摔落高度被重置为 1 格。
-                    // Wiki: 玩家在较小的角度和足够低的速度上着陆不会受到坠落伤害。着陆时临界伤害角度为50°，伤害值等同于玩家从滑行的最高点直接摔落到着陆点受到的伤害。
+                    // Wiki: When gliding with elytra and the vertical descent rate drops below 0.5 blocks per tick, the fall distance is reset to 1 block.
+                    // Wiki: The player will not take fall damage if they land at a low enough angle and speed. The critical angle for landing is 50°, and
+                    //       the damage is equivalent to falling directly from the highest point of the slide to the landing point.
                     if (this.isGliding() && Math.abs(this.speed.y) < 0.5 && this.getPitch() <= 40) {
                         this.resetFallDistance();
                     }
@@ -2728,7 +2807,7 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
                     this.getFoodData().tick(tickDiff);
                 }
 
-                //鞘翅检查和耐久计算
+                // Elytra inspection and durability calculation
                 if (this.isGliding()) {
                     HumanInventory playerInventory = this.getInventory();
                     if (playerInventory != null) {
@@ -2752,11 +2831,11 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
                 this.timeSinceRest++;
             }
 
-            if (this.server.getServerAuthoritativeMovement() > 0) {//仅服务端权威使用，因为客户端权威continue break是正常的
+            if (this.server.getServerAuthoritativeMovement() > 0) { // Only used by the server authority, because the client authority continue break is normal
                 onBlockBreakContinue(breakingBlock, breakingBlockFace);
             }
 
-            //reset move status
+            // Reset move status
             this.newPosition = null;
             this.positionChanged = false;
             if (this.speed == null) {
@@ -2781,12 +2860,11 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             foodData.sendFood();
         }
 
+        PlayerBehaviorRegistry.onUpdate().afterUpdate(this, currentTick, true);
         return true;
     }
 
     /**
-     * 检查附近可交互的实体(插件一般不使用)
-     * <p>
      * Check for nearby interactable entities (not generally used by plugins)
      */
     public void checkInteractNearby() {
@@ -2890,19 +2968,57 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         return (dot1 - dot) >= -maxDiff;
     }
 
+
+
+
+
+
+    ///**
+    // * Sends a chat message as this player. If the message begins with a / (forward-slash) it will be treated as a command.
+    // *
+    // * @param message Message to send
+    // * @return successful
+    // */
+    //public boolean chatOLD(String message) {
+    //    if (!this.spawned || !this.isAlive()) {
+    //        return false;
+    //    }
+
+    //    this.resetInventory();
+
+    //    if (this.removeFormat) {
+    //        message = TextFormat.clean(message, true);
+    //    }
+
+    //    for (String msg : message.split("\n")) {
+    //        if (!msg.trim().isEmpty() && msg.length() <= 512 && this.messageLimitCounter-- > 0) {
+    //            PlayerChatEvent chatEvent = new PlayerChatEvent(this, msg);
+    //            this.server.getPluginManager().callEvent(chatEvent);
+    //            if (!chatEvent.isCancelled()) {
+    //                this.server.broadcastMessage(this.getServer().getLanguage().tr(chatEvent.getFormat(), new String[]{chatEvent.getPlayer().getDisplayName(), chatEvent.getMessage()}), chatEvent.getRecipients());
+    //            }
+    //        }
+    //    }
+
+    //    return true;
+    //}
     /**
-     * 以该玩家的身份发送一条聊天信息。如果消息以/（正斜杠）开头，它将被视为一个命令。
-     * <p>
-     * Sends a chat message as this player. If the message begins with a / (forward-slash) it will be treated
-     * as a command.
+     * Sends a chat message as this player. If the message begins with a / (forward-slash) it will be treated as a command.
      *
-     * @param message 发送的信息<br>message to send
+     * @param message Message to send
      * @return successful
      */
     public boolean chat(String message) {
         if (!this.spawned || !this.isAlive()) {
             return false;
         }
+
+        if (PlayerBehaviorRegistry.chat().handleChat(this, message)) {
+            PlayerBehaviorRegistry.chat().afterChat(this, message, true);
+            return true;
+        }
+
+        PlayerBehaviorRegistry.chat().beforeChat(this, message);
 
         this.resetInventory();
 
@@ -2920,8 +3036,26 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             }
         }
 
+        PlayerBehaviorRegistry.chat().afterChat(this, message, true);
         return true;
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     /**
      * reason=empty string
