@@ -2968,40 +2968,6 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         return (dot1 - dot) >= -maxDiff;
     }
 
-
-
-
-
-
-    ///**
-    // * Sends a chat message as this player. If the message begins with a / (forward-slash) it will be treated as a command.
-    // *
-    // * @param message Message to send
-    // * @return successful
-    // */
-    //public boolean chatOLD(String message) {
-    //    if (!this.spawned || !this.isAlive()) {
-    //        return false;
-    //    }
-
-    //    this.resetInventory();
-
-    //    if (this.removeFormat) {
-    //        message = TextFormat.clean(message, true);
-    //    }
-
-    //    for (String msg : message.split("\n")) {
-    //        if (!msg.trim().isEmpty() && msg.length() <= 512 && this.messageLimitCounter-- > 0) {
-    //            PlayerChatEvent chatEvent = new PlayerChatEvent(this, msg);
-    //            this.server.getPluginManager().callEvent(chatEvent);
-    //            if (!chatEvent.isCancelled()) {
-    //                this.server.broadcastMessage(this.getServer().getLanguage().tr(chatEvent.getFormat(), new String[]{chatEvent.getPlayer().getDisplayName(), chatEvent.getMessage()}), chatEvent.getRecipients());
-    //            }
-    //        }
-    //    }
-
-    //    return true;
-    //}
     /**
      * Sends a chat message as this player. If the message begins with a / (forward-slash) it will be treated as a command.
      *
@@ -3039,23 +3005,6 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         PlayerBehaviorRegistry.chat().afterChat(this, message, true);
         return true;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     /**
      * reason=empty string
