@@ -724,7 +724,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID, 
         if (value == has) return;
 
         if (value) flags.add(EntityFlag.SNEAKING); else flags.remove(EntityFlag.SNEAKING);
-        this.getEntityDataMap().put(EntityDataTypes.FLAGS_2, flags);
+        this.getEntityDataMap().put(EntityDataTypes.FLAGS, flags);
 
         recalculateBoundingBox(false);
         float newHeight = this.getEntityDataMap().getOrDefault(EntityDataTypes.HEIGHT, getCurrentHeight());
@@ -733,7 +733,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID, 
         if (this.hasSpawned.isEmpty()) return;
 
         EntityDataMap delta = new EntityDataMap();
-        delta.put(EntityDataTypes.FLAGS, flags);
+        delta.put(EntityDataTypes.FLAGS, EnumSet.copyOf(flags));
         delta.putType(EntityDataTypes.HEIGHT, newHeight);
         delta.remove(EntityDataTypes.FLAGS_2);
         sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), delta);
