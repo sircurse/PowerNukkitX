@@ -735,6 +735,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID, 
         EntityDataMap delta = new EntityDataMap();
         delta.put(EntityDataTypes.FLAGS, flags);
         delta.putType(EntityDataTypes.HEIGHT, newHeight);
+        delta.remove(EntityDataTypes.FLAGS_2);
         sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), delta);
     }
 

@@ -557,11 +557,15 @@ public abstract class EntityLiving extends Entity implements EntityDamageable {
             ext.remove(EntityFlag.BLOCKING);
         }
         this.getEntityDataMap().put(EntityDataTypes.FLAGS_2, ext);
+
         EnumSet<EntityFlag> wire = EnumSet.copyOf(ext);
         wire.add(EntityFlag.TRANSITION_BLOCKING);
 
+        if (this.hasSpawned.isEmpty()) return;
+
         EntityDataMap delta = new EntityDataMap();
         delta.put(EntityDataTypes.FLAGS_2, wire);
+        delta.remove(EntityDataTypes.FLAGS);
         sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), delta);
     }
 
