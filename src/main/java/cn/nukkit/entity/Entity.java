@@ -1225,6 +1225,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID, 
             player.dataPacket(pk);
         }
     }
+    
 
     public void despawnFrom(Player player) {
         if (this.hasSpawned.containsKey(player.getLoaderId())) {
