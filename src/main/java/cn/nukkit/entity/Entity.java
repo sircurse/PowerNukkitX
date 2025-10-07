@@ -719,7 +719,23 @@ public abstract class Entity extends Location implements Metadatable, EntityID, 
     }
 
     public void setSneaking(boolean value) {
-        this.setDataFlag(EntityFlag.SNEAKING, value);
+        EnumSet<EntityFlag> flags = this.getEntityDataMap().getOrCreateFlags();
+        boolean has = flags.contains(EntityFlag.SNEAKING);
+        if (value == has) return;
+
+        if (value) flags.add(EntityFlag.SNEAKING); else flags.remove(EntityFlag.SNEAKING);
+        this.getEntityDataMap().put(EntityDataTypes.FLAGS_2, flags);
+
+        recalculateBoundingBox(false);
+        float newHeight = this.getEntityDataMap().getOrDefault(EntityDataTypes.HEIGHT, getCurrentHeight());
+        this.getEntityDataMap().putType(EntityDataTypes.HEIGHT, newHeight);
+
+        if (this.hasSpawned.isEmpty()) return;
+
+        EntityDataMap delta = new EntityDataMap();
+        delta.put(EntityDataTypes.FLAGS, flags);
+        delta.putType(EntityDataTypes.HEIGHT, newHeight);
+        sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), delta);
     }
 
     public boolean isSwimming() {

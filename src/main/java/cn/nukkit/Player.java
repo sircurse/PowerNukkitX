@@ -2802,7 +2802,7 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             this.dummyBossBars.values().forEach(DummyBossBar::updateBossEntityPosition);
         }
 
-        updateBlockingFlag();
+        //updateBlockingFlag();
 
         PlayerFood foodData = getFoodData();
         if (this.ticksLived % 40 == 0 && foodData != null) {
