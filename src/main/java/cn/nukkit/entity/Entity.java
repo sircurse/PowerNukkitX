@@ -724,19 +724,15 @@ public abstract class Entity extends Location implements Metadatable, EntityID, 
         if (value == has) return;
 
         if (value) flags.add(EntityFlag.SNEAKING); else flags.remove(EntityFlag.SNEAKING);
-        this.getEntityDataMap().put(EntityDataTypes.FLAGS, flags);
 
         recalculateBoundingBox(false);
         float newHeight = this.getEntityDataMap().getOrDefault(EntityDataTypes.HEIGHT, getCurrentHeight());
         this.getEntityDataMap().putType(EntityDataTypes.HEIGHT, newHeight);
 
-        if (this.hasSpawned.isEmpty()) return;
+        EntityDataMap extras = new EntityDataMap();
+        extras.putType(EntityDataTypes.HEIGHT, newHeight);
 
-        EntityDataMap delta = new EntityDataMap();
-        delta.put(EntityDataTypes.FLAGS, EnumSet.copyOf(flags));
-        delta.putType(EntityDataTypes.HEIGHT, newHeight);
-        delta.remove(EntityDataTypes.FLAGS_2);
-        sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), delta);
+        putAndSendOneLane(EntityDataTypes.FLAGS, flags, extras);
     }
 
     public boolean isSwimming() {
@@ -3141,6 +3137,26 @@ public abstract class Entity extends Location implements Metadatable, EntityID, 
             entityDataMap.put(EntityDataTypes.FLAGS_2, entityFlags);
             sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), entityDataMap);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    public void putAndSendOneLane(EntityDataType<?> lane, EnumSet<EntityFlag> flags, EntityDataMap extras) {
+        this.getEntityDataMap().put(lane, flags);
+
+        EntityDataMap delta = new EntityDataMap();
+        delta.put((EntityDataType<EnumSet<EntityFlag>>) lane, EnumSet.copyOf(flags));
+
+        if (extras != null && !extras.isEmpty()) {
+            delta.putAll(extras);
+        }
+
+        if (lane == EntityDataTypes.FLAGS) {
+            delta.remove(EntityDataTypes.FLAGS_2);
+        } else {
+            delta.remove(EntityDataTypes.FLAGS);
+        }
+
+        sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), delta);
     }
 
     public void setDataFlagsExtend(EnumSet<EntityFlag> entityFlags) {

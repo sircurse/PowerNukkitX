@@ -547,22 +547,16 @@ public abstract class EntityLiving extends Entity implements EntityDamageable {
     }
 
     public void setBlocking(boolean value) {
-        EnumSet<EntityFlag> ext = this.getEntityDataMap().getOrCreateFlags();
-        boolean has = ext.contains(EntityFlag.BLOCKING);
+        EnumSet<EntityFlag> flags = this.getEntityDataMap().getOrCreateFlags();
+        boolean has = flags.contains(EntityFlag.BLOCKING);
         if (value == has) return;
 
-        if (value) ext.add(EntityFlag.BLOCKING); else ext.remove(EntityFlag.BLOCKING);
-        this.getEntityDataMap().put(EntityDataTypes.FLAGS_2, ext);
+        if (value) flags.add(EntityFlag.BLOCKING); else flags.remove(EntityFlag.BLOCKING);
 
-        EnumSet<EntityFlag> wire = EnumSet.copyOf(ext);
+        EnumSet<EntityFlag> wire = EnumSet.copyOf(flags);
         wire.add(EntityFlag.TRANSITION_BLOCKING);
 
-        if (this.hasSpawned.isEmpty()) return;
-
-        EntityDataMap delta = new EntityDataMap();
-        delta.put(EntityDataTypes.FLAGS_2, wire);
-        delta.remove(EntityDataTypes.FLAGS);
-        sendData(this.hasSpawned.values().toArray(Player.EMPTY_ARRAY), delta);
+        putAndSendOneLane(EntityDataTypes.FLAGS_2, wire, new EntityDataMap());
     }
 
     @Override
