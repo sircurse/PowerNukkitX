@@ -430,24 +430,47 @@ public class EntityRegistry implements EntityID, IRegistry<EntityRegistry.Entity
      */
     public void registerCustomEntity(Plugin plugin, Class<? extends Entity> value) throws RegisterException {
         try {
+            FastMemberLoader memberLoader = fastMemberLoaderCache.computeIfAbsent(plugin.getName(), p -> new FastMemberLoader(plugin.getPluginClassLoader()));
+            CustomEntityDefinition def = resolveDefinitionFromClass(value);
+            registerCustomEntityInternal(plugin, def, value, memberLoader);
+        } catch (Throwable e) {
+            if (e instanceof RegisterException re) throw re;
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void registerCustomEntity(Plugin plugin, CustomEntityDefinition def, Class<? extends Entity> value) throws RegisterException {
+        FastMemberLoader memberLoader = fastMemberLoaderCache.computeIfAbsent(plugin.getName(), p -> new FastMemberLoader(plugin.getPluginClassLoader()));
+        registerCustomEntityInternal(plugin, def, value, memberLoader);
+    }
+
+    private void registerCustomEntityInternal(Plugin plugin, CustomEntityDefinition def, Class<? extends Entity> value, @Nullable FastMemberLoader memberLoader) throws RegisterException {
+        try {
             if (!CustomEntity.class.isAssignableFrom(value)) {
                 throw new RegisterException("This class does not implement the CustomEntity interface and cannot be registered as a custom entity!");
             }
 
-            FastMemberLoader memberLoader = fastMemberLoaderCache.computeIfAbsent(plugin.getName(), p -> new FastMemberLoader(plugin.getPluginClassLoader()));
-            CustomEntityDefinition def = resolveDefinitionFromClass(value);
+            if (def == null) {
+                throw new RegisterException("CustomEntityDefinition cannot be null!");
+            }
+
             String id = def.id();
+            if (id == null || id.isEmpty()) {
+                throw new RegisterException("CustomEntityDefinition.id() cannot be null/empty!");
+            }
 
             if (CLASS.putIfAbsent(id, value) != null) {
                 throw new RegisterException("This entity has already been registered with the identifier: " + id);
             }
 
-            FastConstructor<? extends Entity> runtimeCtor = FastConstructor.create(value.getConstructor(IChunk.class, CompoundTag.class), memberLoader, false);
+            FastMemberLoader loader = memberLoader != null ? memberLoader : fastMemberLoaderCache.computeIfAbsent(plugin.getName(), p -> new FastMemberLoader(plugin.getPluginClassLoader()));
+            FastConstructor<? extends Entity> runtimeCtor = FastConstructor.create(value.getConstructor(IChunk.class, CompoundTag.class), loader, false);
             FAST_NEW.put(id, runtimeCtor);
 
             int rid = RUNTIME_ID.getAndIncrement();
             ID2RID.put(id, rid);
             RID2ID.put(rid, id);
+
             EntityDefinition entityDefinition = new EntityDefinition(id, def.eid(), rid, def.hasSpawnEgg(), def.isSummonable());
             DEFINITIONS.put(id, entityDefinition);
             CUSTOM_ENTITY_DEFINITIONS.add(entityDefinition);
@@ -467,10 +490,9 @@ public class EntityRegistry implements EntityID, IRegistry<EntityRegistry.Entity
                 String eggId = id + "_spawn_egg";
                 Registries.ITEM.registerSpawnEgg(eggId);
             }
+
         } catch (NoSuchMethodException e) {
             throw new RegisterException(e);
-        } catch (Throwable e) {
-            throw new RuntimeException(e);
         }
     }
 
