@@ -7,6 +7,8 @@ import org.powernukkitx.network.process.PacketHandler;
 import org.powernukkitx.network.process.PlayerSessionHolder;
 import org.powernukkitx.positiontracking.PositionTracking;
 import lombok.extern.slf4j.Slf4j;
+
+import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.protocol.bedrock.packet.PositionTrackingDBClientRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PositionTrackingDBServerBroadcastPacket;
 
@@ -30,9 +32,11 @@ public class PositionTrackingDBClientRequestHandler implements PacketHandler<Pos
         } catch (IOException e) {
             log.warn("Failed to track the trackingHandler {}", packet.getTrackingId(), e);
         }
+
         PositionTrackingDBServerBroadcastPacket notFound = new PositionTrackingDBServerBroadcastPacket();
         notFound.setAction(PositionTrackingDBServerBroadcastPacket.Action.NOT_FOUND);
         notFound.setTrackingId(packet.getTrackingId());
+        notFound.setPositionTrackingData(NbtMap.EMPTY);
         player.sendPacket(notFound);
     }
 }
