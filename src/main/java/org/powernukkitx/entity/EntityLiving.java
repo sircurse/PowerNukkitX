@@ -83,10 +83,10 @@ public abstract class EntityLiving extends Entity implements EntityDamageable {
     private static final int DEFAULT_DEATH_DURATION_TICKS = 21;
 
     protected int attackTime = 0;
-    protected short hurtTime = 0;
-    protected int deathTime = 0;
-    protected boolean deadState = false;
-    protected boolean deathFinalized = false;
+    protected short hurtTime;
+    protected int deathTime;
+    protected boolean deadState;
+    protected boolean deathFinalized;
     protected boolean invisible = false;
     protected int turtleTicks = 0;
     protected boolean attackTimeByShieldKb;
